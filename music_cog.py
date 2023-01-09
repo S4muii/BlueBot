@@ -1,6 +1,11 @@
 from ast import alias
 import discord
 from discord.ext import commands
+import spotipy
+from spotipy.oauth2 import SpotifyClientCredentials
+import re
+
+spotify = spotipy.Spotify(client_credentials_manager=SpotifyClientCredentials())
 
 from yt_dlp import YoutubeDL
 
@@ -38,6 +43,17 @@ class music_cog(commands.Cog):
             except Exception: 
                 return False
         return {'source': info['formats'][0]['url'], 'title': info['title']}
+    
+    def spotifySearchTrackID(self,track_id):
+        results = spotify.track(track_id=track_id,market="US")
+        print(results)
+        if results["album"]["album_type"] in ["album","single"]:
+            track_name = results["album"]['name']
+            artists = ",".join([artist["name"] for artist in results['album']['artists']])
+            images=results["album"]['images']   #
+            return track_name,artists,images
+        else:
+            return None
 
     def play_next(self):
         if len(self.music_queue) > 0:
@@ -80,28 +96,36 @@ class music_cog(commands.Cog):
 
     @commands.command(name="play", aliases=["p","playing"], help="Plays a selected song from youtube")
     async def play(self, ctx, *args):
-        query = " ".join(args)
         
-        try:
-            voice_channel = ctx.author.voice.channel
-        except:
-            voice_channel = None
-            
-        if voice_channel is None:
-            #you need to be connected so that the bot knows where to go
-            await ctx.send("Connect to a voice channel!")
-        elif self.is_paused:
-            self.vc.resume()
-        else:
-            song = self.search_yt(query)
-            if type(song) == type(True):
-                await ctx.send("Could not download the song. Incorrect format try another keyword. This could be due to playlist or a livestream format.")
+        
+        if ctx.author.voice:
+            voice_channel = ctx.author.voice.channel or None
+   
+            if voice_channel is None:
+                #you need to be connected so that the bot knows where to go
+                await ctx.send("Connect to a voice channel!")
+            elif self.is_paused:
+                self.vc.resume()
             else:
-                await ctx.send("Song added to the queue")
-                self.music_queue.append([song, voice_channel])
+                #TODO - check if the song is a spotify URL
+                #https://open.spotify.com/track/430efk5Jc5wGay4EWP4snS
+                query = " ".join(args)
+                regex = 'https:\\/\\/open\\.spotify\\.com\\/track\\/([0-9A-Za-z]*)'
+                x = re.search(regex, query) 
+                if x:
+                    track_name,artists,images = self.spotifySearchTrackID(x.groups()[0])
+                    query = artists +" " +track_name
+                    print("Spotify Found a track and the final query is ",query)
                 
-                if self.is_playing == False:
-                    await self.play_music(ctx)
+                song = self.search_yt(query)
+                if type(song) == type(True):
+                    await ctx.send("Could not download the song. Incorrect format try another keyword. This could be due to playlist or a livestream format.")
+                else:
+                    await ctx.send("Song added to the queue")
+                    self.music_queue.append([song, voice_channel])
+                    
+                    if self.is_playing == False:
+                        await self.play_music(ctx)
 
     @commands.command(name="pause", help="Pauses the current song being played")
     async def pause(self, ctx, *args):
