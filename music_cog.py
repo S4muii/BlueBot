@@ -1,11 +1,24 @@
-from ast import alias
 import discord
 from discord.ext import commands
-import spotipy
-from spotipy.oauth2 import SpotifyClientCredentials
 import re
+import os
 
-spotify = spotipy.Spotify(client_credentials_manager=SpotifyClientCredentials())
+from spotdl import Spotdl
+
+#Instaintiate spotdl . make sure the credentials are working
+try:
+    spotdl = Spotdl(
+        client_id       = os.environ['SPOTIPY_CLIENT_ID'],
+        client_secret   = os.environ['SPOTIPY_CLIENT_SECRET']
+        )
+except Exception:
+    print("Need to specify Spotify Credintials (SPOTIPY_CLIENT_ID,SPOTIPY_CLIENT_SECRET)\n"+
+          "using an Environment Variable \n"+
+          "On linux that can be achieved like this\n"+
+          "export SPOTIPY_CLIENT_ID=\"xxxx\"\n"+
+          "export SPOTIPY_CLIENT_SECRET=\"xxxx\""
+       )
+
 
 from yt_dlp import YoutubeDL
 
@@ -20,40 +33,57 @@ class music_cog(commands.Cog):
 
         # 2d array containing [song, channel]
         self.music_queue = []
-        self.YDL_OPTIONS = {'format':'m4a/bestaudio/best', 'noplaylist':'True'}
+        self.YDL_OPTIONS = {
+            'format':'m4a/bestaudio/best',
+            'noplaylist':'True',
+            "no_warnings": True,
+            "retries":5,
+            "quiet": True
+            }
         self.FFMPEG_OPTIONS = {
             'before_options': '-reconnect 1 -reconnect_streamed 1 -reconnect_delay_max 5',
             'options': '-vn'
             }
 
         self.vc = None
+        
+    def search_spotdl(self,item):
+        # print(item)
+        songs = spotdl.search([item])
+        # print([song.artist for song in songs])
+
+        songs_urls = spotdl.get_download_urls(songs)
+        # print(songs_urls)
+        return self.get_song_yt(songs_urls[0])
 
      #searching the item on youtube
-    def search_yt(self, item):
+    def get_song_yt(self, url):
         with YoutubeDL(self.YDL_OPTIONS) as ydl:
             try: 
-                info = ydl.extract_info("ytsearch:%s" % item, download=False)['entries'][0]
+                info = ydl.extract_info(url, download=False)
                 
-                #MY_STUPID_HACK
-                #get only the audios 
-                info["formats"] = [x for x in info["formats"] if x.get("resolution")=="audio only"]
-                #sort by the biggest file [technically the best quality]
-                info["formats"] = sorted(info["formats"], key=lambda d: d['filesize'],reverse=True)
+                #get only the audios - already sorted by worst to best so taking the last
+                #format is gonna be enough . no need to sort or do anything else really
+                info["formats"] = [f for f in info["formats"] if f.get("audio_ext")!='none']
+
        
             except Exception: 
                 return False
-        return {'source': info['formats'][0]['url'], 'title': info['title']}
-    
-    def spotifySearchTrackID(self,track_id):
-        results = spotify.track(track_id=track_id,market="US")
-        print(results)
-        if results["album"]["album_type"] in ["album","single"]:
-            track_name = results["album"]['name']
-            artists = ",".join([artist["name"] for artist in results['album']['artists']])
-            images=results["album"]['images']   #
-            return track_name,artists,images
-        else:
-            return None
+        #Debug Statments
+        print("yt-video ID: ",info["id"])
+        # print("Chosen Format: ",info['formats'][-1])
+        return {'source': info['formats'][-1]['url'], 'title': info['title']}
+ 
+    # def spotifySearchTrackID(self,track_id):
+    #     results = spotify.track(track_id=track_id,market="US")
+    #     # print(results)
+    #     if results["album"]["album_type"] in ["album","single"]:
+    #         track_name = results["album"]['name']
+    #         artists = ",".join([artist["name"] for artist in results['album']['artists']])
+    #         images=results["album"]['images']   #
+    #         return track_name,artists,images
+    #     else:
+    #         return None
 
     def play_next(self):
         if len(self.music_queue) > 0:
@@ -64,8 +94,8 @@ class music_cog(commands.Cog):
 
             #remove the first element as you are currently playing it
             self.music_queue.pop(0)
-            print(m_url)
-            self.vc.play(discord.FFmpegPCMAudio(m_url, **self.FFMPEG_OPTIONS), after=lambda e: self.play_next())
+            # print(m_url)
+            self.vc.play(discord.FFmpegOpusAudio(m_url, **self.FFMPEG_OPTIONS), after=lambda e: self.play_next())
         else:
             self.is_playing = False
 
@@ -89,7 +119,7 @@ class music_cog(commands.Cog):
             
             #remove the first element as you are currently playing it
             self.music_queue.pop(0)
-            print(m_url)
+            # print(m_url)
             self.vc.play(discord.FFmpegPCMAudio(m_url, **self.FFMPEG_OPTIONS), after=lambda e: self.play_next())
         else:
             self.is_playing = False
@@ -107,17 +137,20 @@ class music_cog(commands.Cog):
             elif self.is_paused:
                 self.vc.resume()
             else:
-                #TODO - check if the song is a spotify URL
-                #https://open.spotify.com/track/430efk5Jc5wGay4EWP4snS
                 query = " ".join(args)
-                regex = 'https:\\/\\/open\\.spotify\\.com\\/track\\/([0-9A-Za-z]*)'
-                x = re.search(regex, query) 
-                if x:
-                    track_name,artists,images = self.spotifySearchTrackID(x.groups()[0])
-                    query = artists +" " +track_name
-                    print("Spotify Found a track and the final query is ",query)
                 
-                song = self.search_yt(query)
+                #TODO - this is just a workaround to get the bot to accept yt/ytMusic links
+                #test ".p https://www.youtube.com/watch?v=EORgrmt2cR0"
+                regex = '((https?:\/\/)?(music\.)?youtube\.com\/watch\?v\=[0-9a-zA-Z]+)'
+                x = re.search(regex, query)
+                if x:
+                    song = self.get_song_yt(x.groups()[0])
+                    # song = self.search_spotdl(query)
+                else:
+                    song = self.search_spotdl(query)
+                    
+                    
+                    
                 if type(song) == type(True):
                     await ctx.send("Could not download the song. Incorrect format try another keyword. This could be due to playlist or a livestream format.")
                 else:
@@ -126,8 +159,10 @@ class music_cog(commands.Cog):
                     
                     if self.is_playing == False:
                         await self.play_music(ctx)
+        else:
+            await ctx.send("Connect to a voice channel!")
 
-    @commands.command(name="pause", help="Pauses the current song being played")
+    @commands.command(name="pause",aliases=["pa"], help="Pauses the current song being played")
     async def pause(self, ctx, *args):
         if self.is_playing:
             self.is_playing = False

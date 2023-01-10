@@ -1,4 +1,3 @@
-import discord
 from discord.ext import commands
 
 class help_cog(commands.Cog):
@@ -7,7 +6,7 @@ class help_cog(commands.Cog):
         self.help_message = """
 ```
 General commands:
-.help - displays all the available commands
+.help   [h]     - displays all the available commands
 .play   [p]      <keywords> - finds the song on youtube and plays it in your current channel. Will resume playing the current song if it was paused
 .queue  [q]     - displays the current music queue
 .skip   [s]     - skips the current song being played
@@ -28,9 +27,9 @@ General commands:
 
         await self.send_to_all(self.help_message)        
 
-    # @commands.command(name="help", help="Displays all the available commands")
-    # async def help(self, ctx):
-    #     await ctx.send(self.help_message)
+    @commands.command(name="help",aliases=["h"], help="Displays all the available commands")
+    async def help(self, ctx):
+        await ctx.send(self.help_message)
 
     async def send_to_all(self, msg):
         for text_channel in self.text_channel_list:
