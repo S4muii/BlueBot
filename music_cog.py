@@ -1,7 +1,7 @@
 import discord
 from discord.ext import commands
-import re
-import os
+
+import re,os,traceback
 
 from spotdl import Spotdl
 
@@ -20,6 +20,8 @@ except Exception:
        )
 
 
+#TODO - scale it to multiple servers
+
 from yt_dlp import YoutubeDL
 
 
@@ -27,14 +29,14 @@ class music_cog(commands.Cog):
     def __init__(self, bot):
         self.bot = bot
     
-        #all the music related stuff
+        #state variable
         self.is_playing = False
         self.is_paused = False
 
         # 2d array containing [song, channel]
         self.music_queue = []
         self.YDL_OPTIONS = {
-            'format':'m4a/bestaudio/best',
+            'format':'bestaudio',
             'noplaylist':'True',
             "no_warnings": True,
             "retries":5,
@@ -42,9 +44,9 @@ class music_cog(commands.Cog):
             }
         self.FFMPEG_OPTIONS = {
             'before_options': '-reconnect 1 -reconnect_streamed 1 -reconnect_delay_max 5',
-            'options': '-vn'
+            'options': '-vn -af atempo=2.5'
             }
-
+        
         self.vc = None
         
     def search_spotdl(self,item):
@@ -67,23 +69,14 @@ class music_cog(commands.Cog):
                 info["formats"] = [f for f in info["formats"] if f.get("audio_ext")!='none']
 
        
-            except Exception: 
+            except Exception:
+                traceback.print_exc()
                 return False
         #Debug Statments
         print("yt-video ID: ",info["id"])
         # print("Chosen Format: ",info['formats'][-1])
         return {'source': info['formats'][-1]['url'], 'title': info['title']}
- 
-    # def spotifySearchTrackID(self,track_id):
-    #     results = spotify.track(track_id=track_id,market="US")
-    #     # print(results)
-    #     if results["album"]["album_type"] in ["album","single"]:
-    #         track_name = results["album"]['name']
-    #         artists = ",".join([artist["name"] for artist in results['album']['artists']])
-    #         images=results["album"]['images']   #
-    #         return track_name,artists,images
-    #     else:
-    #         return None
+
 
     def play_next(self):
         if len(self.music_queue) > 0:
@@ -119,7 +112,6 @@ class music_cog(commands.Cog):
             
             #remove the first element as you are currently playing it
             self.music_queue.pop(0)
-            # print(m_url)
             self.vc.play(discord.FFmpegPCMAudio(m_url, **self.FFMPEG_OPTIONS), after=lambda e: self.play_next())
         else:
             self.is_playing = False
@@ -141,14 +133,12 @@ class music_cog(commands.Cog):
                 
                 #TODO - this is just a workaround to get the bot to accept yt/ytMusic links
                 #test ".p https://www.youtube.com/watch?v=EORgrmt2cR0"
-                regex = '((https?:\/\/)?(music\.)?youtube\.com\/watch\?v\=[0-9a-zA-Z]+)'
+                regex = '^((?:https?:)?\/\/)?((?:www|m|music)\.)?((?:youtube(-nocookie)?\.com|youtu.be))(\/(?:[\w\-]+\?v=|embed\/|v\/)?)([\w\-]+)(\S+)?$'
                 x = re.search(regex, query)
                 if x:
-                    song = self.get_song_yt(x.groups()[0])
-                    # song = self.search_spotdl(query)
+                    song = self.get_song_yt(x.string)
                 else:
                     song = self.search_spotdl(query)
-                    
                     
                     
                 if type(song) == type(True):
@@ -213,3 +203,9 @@ class music_cog(commands.Cog):
         self.is_playing = False
         self.is_paused = False
         await self.vc.disconnect()
+        
+    #TODO - ZACHY's idea  -- we need to hotswap this bitch xD
+    @commands.command(name="speed")
+    async def speed(self, ctx , speed):
+       self.FFMPEG_OPTIONS["options"] = "-vn -af atempo=" + str(speed)
+       
