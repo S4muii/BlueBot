@@ -6,14 +6,15 @@ class help_cog(commands.Cog):
         self.help_message = """
 ```
 General commands:
-.help   [h]     - displays all the available commands
-.play   [p]      <keywords> - finds the song on youtube and plays it in your current channel. Will resume playing the current song if it was paused
-.queue  [q]     - displays the current music queue
-.skip   [s]     - skips the current song being played
-.clear  [c]     - Stops the music and clears the queue
-.leave  [l]     - Disconnected the bot from the voice channel
-.pause  [pa]    - pauses the current song being played or resumes if already paused
-.resume [r]     - resumes playing the current song
+    .help   [h]                 - displays all the available commands
+    .play   [p] {keyword|url}   - finds the song on youtube and plays it in your current channel.
+    .queue  [q]                 - displays the current music queue
+    .skip   [s]                 - skips the current song being played
+    .clear  [c]                 - Stops the music and clears the queue
+    .leave  [l]                 - Disconnected the bot from the voice channel
+    .pause  [pa]                - pauses the current song being played or resumes if already paused
+    .resume [r]                 - resumes playing the current song
+    .speed      {0.1>float<2.0} - changes the speed of the audio
 ```
 """
         self.text_channel_list = []
