@@ -25,4 +25,3 @@ export DiscordBotToken="xxx"
 python3 -m pip install -r requirements.txt
 python3 main.py
 ```
-Testing the commit signing in git . bear with me, I'll delete this later
