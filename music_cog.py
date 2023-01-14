@@ -1,12 +1,16 @@
 import discord
 from discord.ext import commands
-from helper import guildOptions
+from spotdl import Spotdl
+
+import asyncio
 
 import re
 import os,sys
 import traceback
 
-from spotdl import Spotdl
+
+from helper import guildOptions
+
 
 # Instaintiate spotdl . make sure the credentials are working
 try:
@@ -94,8 +98,7 @@ class music_cog(commands.Cog):
     async def get_song_yt(self, ctx, item,itemType):
         #itemType is gonna be either a url or a songName as the user inputs it
         
-        gID = ctx.author.guild.id
-        guildOptions = self.go[gID]
+        guildOptions = self.go[ctx.author.guild.id]
         
         with YoutubeDL(guildOptions.YDL_OPTIONS) as ydl:
             try:
@@ -126,8 +129,8 @@ class music_cog(commands.Cog):
         }
 
     async def tryConnectVc(self,ctx):
-        gID = ctx.author.guild.id
-        guildOptions = self.go[gID]
+        
+        guildOptions = self.go[ctx.author.guild.id]
         
         # try to connect to voice channel if you are not already connected
         if guildOptions.vc == None or not guildOptions.vc.is_connected():
@@ -140,33 +143,31 @@ class music_cog(commands.Cog):
         else:
             await guildOptions.vc.move_to(guildOptions.current_song[1])
     
-    def play_next(self, ctx):
-        #sync version of play_music without the VC connect abilities
-        gID = ctx.author.guild.id
-        guildOptions = self.go[gID]
+    def resetFlags(self,ctx):
+        guildOptions                = self.go[ctx.author.guild.id]
+        guildOptions.is_playing     = False
+        guildOptions.is_paused      = False
+        guildOptions.loop           = False
+        guildOptions.current_song   = None
         
-        if len(guildOptions.music_queue) > 0 or (guildOptions.loop and guildOptions.current_song):
-            guildOptions.is_playing = True
-
-            if not (guildOptions.loop and guildOptions.current_song):
-                guildOptions.current_song = guildOptions.music_queue.pop(0)
-                
-            m_url = guildOptions.current_song[0]['source']
-              
-            
-            # await ctx.send("Starting to play ```css\n\'",guildOptions.current_song[0]['title']+"\'")
-            guildOptions.vc.play(discord.FFmpegPCMAudio(
-                m_url, **guildOptions.FFMPEG_OPTIONS), 
-                after=lambda e: self.play_next(ctx))
-            
-        else:
-            guildOptions.is_playing = False
-            guildOptions.current_song=None
-    
     # infinite loop checking
     async def play_music(self, ctx):
-        gID = ctx.author.guild.id
-        guildOptions = self.go[gID]
+        
+        guildOptions = self.go[ctx.author.guild.id]
+        
+        #deal with the skip
+        if guildOptions.skip:
+            #ignore the loop and choose a new song or exit then reset the skip Flag
+            
+            if len(guildOptions.music_queue) > 0:
+                guildOptions.current_song = guildOptions.music_queue.pop(0)
+            else:
+                await ctx.send("Playlist is empty. please add some more music")
+                #reset all of the flags
+                self.resetFlags(ctx)
+                
+            guildOptions.skip=False
+            
         
         if len(guildOptions.music_queue) > 0 or (guildOptions.loop and guildOptions.current_song):
             guildOptions.is_playing = True
@@ -179,19 +180,21 @@ class music_cog(commands.Cog):
             await self.tryConnectVc(ctx)
 
             m_url = guildOptions.current_song[0]['source']
-            
-            await ctx.send("Starting to play \n```css\n["+guildOptions.current_song[0]['title']+"]\n```")
-            guildOptions.vc.play(discord.FFmpegPCMAudio(
-                m_url, **guildOptions.FFMPEG_OPTIONS), 
-                after=lambda e: self.play_next(ctx))
+            loop = guildOptions.vc.loop
+
+            await ctx.send("```css\n["+guildOptions.current_song[0]['title']+"] is playing\n```")
+            guildOptions.vc.play(
+                discord.FFmpegPCMAudio(
+                    m_url, **guildOptions.FFMPEG_OPTIONS), 
+                after=lambda e: asyncio.run_coroutine_threadsafe(self.play_music(ctx), loop)
+                )
         else:
-            guildOptions.is_playing = False
-            guildOptions.current_song=None
+            self.resetFlags(ctx)
 
     @commands.command(name="play", aliases=["p", "playing"], help="Plays a selected song from youtube")
     async def play(self, ctx, *args):
-        gID = ctx.author.guild.id
-        guildOptions = self.go[gID]
+        
+        guildOptions = self.go[ctx.author.guild.id]
 
         # if the first condition is None then python wouldn't even evaluate the second condition
         if ctx.author.voice and ctx.author.voice.channel:
@@ -225,8 +228,8 @@ class music_cog(commands.Cog):
 
     @commands.command(name="pause", aliases=["pa"], help="Pauses the current song being played")
     async def pause(self, ctx):
-        gID = ctx.author.guild.id
-        guildOptions = self.go[gID]
+        
+        guildOptions = self.go[ctx.author.guild.id]
 
         if      guildOptions.is_playing:
                 guildOptions.is_playing    = False
@@ -239,8 +242,8 @@ class music_cog(commands.Cog):
 
     @commands.command(name="resume", aliases=["r"], help="Resumes playing with the discord bot")
     async def resume(self, ctx):
-        gID = ctx.author.guild.id
-        guildOptions = self.go[gID]
+        
+        guildOptions = self.go[ctx.author.guild.id]
 
         if  guildOptions.is_paused:
             guildOptions.is_paused = False
@@ -249,23 +252,24 @@ class music_cog(commands.Cog):
 
     @commands.command(name="skip", aliases=["s"], help="Skips the current song being played")
     async def skip(self, ctx):
-        gID = ctx.author.guild.id
-        guildOptions = self.go[gID]
+        
+        guildOptions = self.go[ctx.author.guild.id]
+
 
         if guildOptions.vc:
-            #skip the current_song
-            if (guildOptions.loop and guildOptions.current_song):
-                guildOptions.current_song = guildOptions.music_queue.pop(0)
+            #if there's no song that's already playing then don't set the flag
+            if  guildOptions.current_song:
+                guildOptions.skip = True
                 
+            #that would invoke play_music anyway 
             guildOptions.vc.stop()
-            # try to play next in the queue if it exists
-            await self.play_music(ctx)
+              
+            
 
 
     def createQueueText(self,ctx):
-        
-        gID = ctx.author.guild.id
-        guildOptions = self.go[gID]
+
+        guildOptions = self.go[ctx.author.guild.id]
         
         #if there's a current song . show it in the queue
         retval = guildOptions.current_song[0]['title'] if guildOptions.current_song else ""
@@ -296,31 +300,31 @@ class music_cog(commands.Cog):
 
     @commands.command(name="clear", aliases=["c", "bin"], help="Stops the music and clears the queue")
     async def clear(self, ctx):
-        gID = ctx.author.guild.id
-        guildOptions = self.go[gID]
+        
+        guildOptions = self.go[ctx.author.guild.id]
 
         if guildOptions.vc != None and guildOptions.is_playing:
             guildOptions.vc.stop()
-        guildOptions.music_queue = []
-        guildOptions.current_song = None
+        guildOptions.music_queue    = []
+        guildOptions.current_song   = None
         await ctx.send("Music queue cleared")
 
     @commands.command(name="disconnect", aliases=["leave", "d", "dc"], help="Kick the bot from VC")
     async def dc(self, ctx):
-        gID = ctx.author.guild.id
-        guildOptions = self.go[gID]
+        
+        guildOptions = self.go[ctx.author.guild.id]
 
-        guildOptions.is_playing = False
-        guildOptions.is_paused = False
-        guildOptions.current_song=None
+        guildOptions.is_playing     = False
+        guildOptions.is_paused      = False
+        guildOptions.current_song   = None
         await guildOptions.vc.disconnect()
 
     @commands.command(name="speed")
     async def speed(self, ctx, speed):
         # guildOptions.FFMPEG_OPTIONS["options"] = "-vn -af atempo=" + str(speed)
         try:
-            gID = ctx.author.guild.id
-            guildOptions = self.go[gID]
+            
+            guildOptions = self.go[ctx.author.guild.id]
             
             # making sure that speed actually contains a float
             print("Guild_Name: ", ctx.author.guild.name, " ",
@@ -338,8 +342,8 @@ class music_cog(commands.Cog):
     @commands.command(name="loop",aliases=["l"])
     async def loop(self, ctx, value='on'):
         
-        gID = ctx.author.guild.id
-        guildOptions = self.go[gID]
+        
+        guildOptions = self.go[ctx.author.guild.id]
         
         if value =='on':
             guildOptions.loop = True
@@ -349,22 +353,23 @@ class music_cog(commands.Cog):
             guildOptions.loop= not guildOptions.loop
         
 
-    @commands.command(name="guild_options")
+    @commands.command(name="guild_opts",aliases=["g","debug"])
     async def guild_options(self, ctx):
 
-        gID = ctx.author.guild.id
-        guildOptions = self.go[gID]
+        
+        guildOptions = self.go[ctx.author.guild.id]
         
         retVal = ""
-        retVal += "Guild_name: "+       str(ctx.author.guild.name)+'\n'
-        retVal += "Guild_ID: "+         str(ctx.author.guild.id)+'\n'
-        retVal += "is_playing: " +      str(guildOptions.is_playing)+"\n"
-        retVal += "is_paused: " +       str(guildOptions.is_paused)+"\n"
-        retVal += "music_queue: " +     str("\n"+"\n".join(["\t" +line for line in self.createQueueText(ctx).split("\n")][:-1]))+"\n"
-        retVal += "loop: " +            str(guildOptions.loop)+"\n"
-        retVal += "vc: " +              str(guildOptions.vc)+"\n"
+        retVal += "Guild_name: "+       str(ctx.author.guild.name            )+'\n'
+        retVal += "Guild_ID: "+         str(ctx.author.guild.id              )+'\n'
+        retVal += "is_playing: " +      str(guildOptions.is_playing          )+"\n"
+        retVal += "is_paused: " +       str(guildOptions.is_paused           )+"\n"
+        retVal += "skip: " +            str(guildOptions.skip                )+"\n"
+        retVal += "loop: " +            str(guildOptions.loop                )+"\n"
+        retVal += "vc: " +              str(guildOptions.vc                  )+"\n"
+        retVal += "FFMPEG_OPTIONS: " +  str(guildOptions.FFMPEG_OPTIONS      )+"\n"
         # retVal += "\nYDL_OPTIONS: " +     str(guildOptions.YDL_OPTIONS)+"\n"
-        retVal += "FFMPEG_OPTIONS: " +  str(guildOptions.FFMPEG_OPTIONS)+"\n"
-        retVal += "current_song: " +    str(guildOptions.current_song[0]['title'] if guildOptions.current_song else None)
+        retVal += "music_queue: " +     str("\n"+"\n".join(["\t" +line for line in self.createQueueText(ctx).split("\n")][:-1]))+"\n"
+        # retVal += "current_song: " +    str(guildOptions.current_song[0]['title'] if guildOptions.current_song else None)
 
         await ctx.send(retVal)

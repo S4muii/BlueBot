@@ -16,17 +16,18 @@ Created on Fri Jan 13 19:16:49 2023
 class guildOptions():
     def __init__(self):
         
-        self.is_playing=False
-        self.is_paused=False
+        self.is_playing     = False
+        self.is_paused      = False
+        self.skip           = False
         
-        self.loop=False
-        self.current_song=None
+        self.loop           = False
+        self.current_song   = None
         
-        self.music_queue = []
+        self.music_queue    = []
         
-        self.vc = None
+        self.vc             = None
         
-        self.YDL_OPTIONS =\
+        self.YDL_OPTIONS    =\
         {
             'format':'bestaudio',
             'noplaylist':'True',
@@ -35,10 +36,8 @@ class guildOptions():
             "quiet": True
         }
         
-        self.FFMPEG_OPTIONS=\
+        self.FFMPEG_OPTIONS =\
         {
             'before_options': '-reconnect 1 -reconnect_streamed 1 -reconnect_delay_max 5',
             'options': '-vn'
         }
-
-      

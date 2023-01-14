@@ -16,7 +16,7 @@ General commands:
     .resume     [r]                 - resumes playing the current song
     .loop       [l]                 - loops the current song forever
     .speed      {0.5>float<100.0}   - changes the speed of the audio
-    .guild_options                  - prints Debug statements relative to each guild
+    .guild_opts [g]                 - prints Debug statements relative to each guild
 ```
 """
         self.text_channel_list = []
