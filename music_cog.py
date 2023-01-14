@@ -42,7 +42,7 @@ except Exception:
 
 
 # some weirda$$ variable names that you might encounter so a bit of a headsup [any help in refactoring this mess would be appreciated]
-# GO     GuildOptions        It contains the variables for each guild
+# go     GuildsOptions       It contains the variables for each guild
 # gID    Author guild ID     pretty self explanatory :p it is the author(the one issuing the command)'s guild(current guild)'s ID
 
 from yt_dlp import YoutubeDL
@@ -54,11 +54,26 @@ class music_cog(commands.Cog):
 
     @commands.Cog.listener()
     async def on_ready(self):
-        # state variables
+        # state variables 
         self.go = {}
         for guild in self.bot.guilds:
             # Guild_Options
             self.go[guild.id] = guildOptions()
+
+    @commands.Cog.listener()
+    async def on_guild_remove(self,guild):
+        #our beloved bot has been deleted from a server . how dare them ugh
+        print("our bot has been deleted from ",guild.name,",",guild.id)
+        #deleting the guildOptions for it 
+        self.go.pop(guild.id)
+            
+    @commands.Cog.listener()
+    async def on_guild_join(self,guild):
+        #bot has joined a new server
+        self.go[guild.id] = guildOptions()
+        
+        for channel in guild.text_channels:
+            await channel.send("Holaaaa , The BlueBot is here , b1tches xD")
             
 
     async def search_spotdl(self, ctx, item):
@@ -341,8 +356,8 @@ class music_cog(commands.Cog):
         guildOptions = self.go[gID]
         
         retVal = ""
-        retVal += "Guild_name"+         str(ctx.author.guild.name)+'\n'
-        retVal += "Guild_ID"+           str(ctx.author.guild.id)+'\n'
+        retVal += "Guild_name: "+       str(ctx.author.guild.name)+'\n'
+        retVal += "Guild_ID: "+         str(ctx.author.guild.id)+'\n'
         retVal += "is_playing: " +      str(guildOptions.is_playing)+"\n"
         retVal += "is_paused: " +       str(guildOptions.is_paused)+"\n"
         retVal += "music_queue: " +     str("\n"+"\n".join(["\t" +line for line in self.createQueueText(ctx).split("\n")][:-1]))+"\n"

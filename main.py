@@ -25,6 +25,15 @@ async def on_ready():
 async def on_guild_join(guild):
     print('Bot has been added to a new server',guild.name)
     
+    
+ORRR
+if it's inside a cog then we use
+
+@commands.Cog.listener()
+async def on_guild_join(self, guild):
+    print('Bot has been added to a new server',guild.name)
+
+    
 '''
 
         
