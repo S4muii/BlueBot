@@ -11,9 +11,6 @@ class MyBot(commands.Bot):
     async def on_ready(self):
         print(f'Logged on as {self.user}!')
         
-    async def on_guild_join(self,guild):
-        print('Bot has been added to a new server',guild.name)
-        
 ''' 
        
 #this is just an event . another way to do this would be like this 

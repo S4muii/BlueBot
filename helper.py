@@ -11,7 +11,9 @@ Created on Fri Jan 13 19:16:49 2023
 #         self.guild_id = guild_id
 #         self.guildOptions = guildOptions()
         
-        
+import os
+
+SongsTempDir="./SongsTempDir/"
     
 class guildOptions():
     def __init__(self):
@@ -29,15 +31,18 @@ class guildOptions():
         
         self.YDL_OPTIONS    =\
         {
-            'format':'bestaudio',
+            'format':'bestaudio[acodec=opus]',
+            'outtmpl':os.path.join(SongsTempDir,'%(id)s.opus'),
+            'format-sort':'acodec:',
             'noplaylist':'True',
             "no_warnings": True,
             "retries":5,
-            "quiet": True
+            "quiet": True,
+            
         }
         
         self.FFMPEG_OPTIONS =\
         {
-            'before_options': '-reconnect 1 -reconnect_streamed 1 -reconnect_delay_max 5',
+            'before_options': '',
             'options': '-vn'
         }

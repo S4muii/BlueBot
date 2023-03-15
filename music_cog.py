@@ -6,11 +6,8 @@ import asyncio
 
 import re
 import os,sys
-import traceback
 
-
-from helper import guildOptions
-
+from helper import guildOptions,SongsTempDir
 
 # Instaintiate spotdl . make sure the credentials are working
 try:
@@ -29,7 +26,9 @@ except Exception:
 
 
 # TODO - Sanatize inputs ***Urgent
+# TODO - Minimize the time it takes to find the song [maybe caching]
 # TODO - Lyrics
+# TODO - make the client stream the music on disk style *****
 
 # TODO - use the song metadata , show it to the users preferably using embeds
 
@@ -75,15 +74,15 @@ class music_cog(commands.Cog):
     async def on_guild_join(self,guild):
         #bot has joined a new server
         self.go[guild.id] = guildOptions()
-        
+        print("our bot has been added to ",guild.name,",",guild.id)
         for channel in guild.text_channels:
             await channel.send("Holaaaa , The BlueBot is here , b1tches xD")
             
 
     async def search_spotdl(self, ctx, item):
-        # print("Guild_Name: ",ctx.author.guild.name," ",item)
+        
         songs = spotdl.search([item])
-        # print("Guild_Name: ",ctx.author.guild.name," ",[song.artist for song in songs])
+        
         try:
             #get_download_urls takes multiple song names and returns multiple urls as well . hence JUST the first item 
             songUrl = spotdl.get_download_urls(songs)[0]
@@ -94,7 +93,6 @@ class music_cog(commands.Cog):
         
 
     # searching the item on youtube
-
     async def get_song_yt(self, ctx, item,itemType):
         #itemType is gonna be either a url or a songName as the user inputs it
         
@@ -104,17 +102,16 @@ class music_cog(commands.Cog):
             try:
                 
                 if itemType == 'url':
-                    info = ydl.extract_info(item, download=False)
+                    info = ydl.extract_info(item, download=True)
                 elif itemType == 'query':
                     #TODO . get the first match that you find fix it later
-                    info = ydl.extract_info("ytsearch:%s" % item, download=False)["entries"][0]
+                    info = ydl.extract_info("ytsearch:%s" % item, download=True)["entries"][0]
                     
                 # get only the audios - already sorted by worst to best so taking the last
                 # format is gonna be enough . no need to sort or do anything else really
-                info["formats"] = [f for f in info["formats"] if f.get("audio_ext") != 'none']
+                # info["formats"] = [f for f in info["formats"] if f.get("audio_ext") != 'none' and f.get("acodec") == "opus"]
 
             except Exception:
-                traceback.print_exc()
                 await ctx.send("yt-dlp shat the bed as well , Sorry boys . maybe a Full Youtube Link is gonna work")
                 return None
             
@@ -124,7 +121,7 @@ class music_cog(commands.Cog):
               "yt-video title: "    ,info["title"])
         # print("Guild_Name: ",ctx.author.guild.name," ","Chosen Format: ",info['formats'][-1])
         return {
-            'source': info['formats'][-1]['url'],
+            'source': os.path.join(SongsTempDir,info['id']+'.opus'),
             'title': info['title']
         }
 
@@ -182,9 +179,9 @@ class music_cog(commands.Cog):
             m_url = guildOptions.current_song[0]['source']
             loop = guildOptions.vc.loop
 
-            await ctx.send("```css\n["+guildOptions.current_song[0]['title']+"] is playing\n```")
+            await ctx.send("```INI\nsong=\""+guildOptions.current_song[0]['title']+"\" is playing\n```")
             guildOptions.vc.play(
-                discord.FFmpegPCMAudio(
+                discord.FFmpegOpusAudio(
                     m_url, **guildOptions.FFMPEG_OPTIONS), 
                 after=lambda e: asyncio.run_coroutine_threadsafe(self.play_music(ctx), loop)
                 )
@@ -203,17 +200,20 @@ class music_cog(commands.Cog):
             if guildOptions.is_paused:
                 guildOptions.vc.resume()
             else:
-                query = " ".join(args)
+                query = " ".join(args).strip()
+                if not query:
+                    await ctx.send("you need to specify {SongName/SpotifyUrl/YoutubeUrl}")
+                    return
 
                 # TODO - this is just a workaround to get the bot to accept yt/ytMusic links
                 # test ".p https://www.youtube.com/watch?v=EORgrmt2cR0"
                 regex = '^((?:https?:)?\/\/)?((?:www|m|music)\.)?((?:youtube(-nocookie)?\.com|youtu.be))(\/(?:[\w\-]+\?v=|embed\/|v\/)?)([\w\-]+)(\S+)?$'
-                x = re.search(regex, query.strip())
+                regexMatch = re.search(regex, query)
                 
-                if not x:
+                if not regexMatch:
                     songUrl = await self.search_spotdl(ctx, query)
 
-                song = await self.get_song_yt(ctx, x.string if x else (songUrl or query) ,"url" if x else "query")
+                song = await self.get_song_yt(ctx, regexMatch.string if regexMatch else (songUrl or query) ,"url" if regexMatch else "query")
                             
                 if not song:
                     await ctx.send("Could not download the song. Incorrect format try another keyword. This could be due to playlist or a livestream format.")
@@ -254,8 +254,7 @@ class music_cog(commands.Cog):
     async def skip(self, ctx):
         
         guildOptions = self.go[ctx.author.guild.id]
-
-
+        
         if guildOptions.vc:
             #if there's no song that's already playing then don't set the flag
             if  guildOptions.current_song:
@@ -265,8 +264,6 @@ class music_cog(commands.Cog):
             guildOptions.vc.stop()
               
             
-
-
     def createQueueText(self,ctx):
 
         guildOptions = self.go[ctx.author.guild.id]
@@ -332,16 +329,14 @@ class music_cog(commands.Cog):
             # making sure that speed is between a 0.5-100.0
             assert float(speed) >= 0.5 and float(speed) <= 100.0
 
-            guildOptions.FFMPEG_OPTIONS["options"] = "-vn -af atempo=" + \
-                str(float(speed))
+            guildOptions.FFMPEG_OPTIONS["options"] = "-vn -af atempo=" + str(float(speed))
         except:
             print("Guild_Name: ", ctx.author.guild.name, " ",
                   "There has been an issue with the speed command")
             return
         
     @commands.command(name="loop",aliases=["l"])
-    async def loop(self, ctx, value='on'):
-        
+    async def loop(self, ctx, value):
         
         guildOptions = self.go[ctx.author.guild.id]
         
@@ -351,6 +346,8 @@ class music_cog(commands.Cog):
             guildOptions.loop = False
         else:
             guildOptions.loop= not guildOptions.loop
+            
+        await ctx.send("Loop is now "+ ("on" if guildOptions.loop==True else "off"))
         
 
     @commands.command(name="guild_opts",aliases=["g","debug"])
@@ -359,7 +356,7 @@ class music_cog(commands.Cog):
         
         guildOptions = self.go[ctx.author.guild.id]
         
-        retVal = ""
+        retVal = "```"
         retVal += "Guild_name: "+       str(ctx.author.guild.name            )+'\n'
         retVal += "Guild_ID: "+         str(ctx.author.guild.id              )+'\n'
         retVal += "is_playing: " +      str(guildOptions.is_playing          )+"\n"
@@ -367,9 +364,17 @@ class music_cog(commands.Cog):
         retVal += "skip: " +            str(guildOptions.skip                )+"\n"
         retVal += "loop: " +            str(guildOptions.loop                )+"\n"
         retVal += "vc: " +              str(guildOptions.vc                  )+"\n"
+        retVal += "avgLatency: " +      (str(int(guildOptions.vc.average_latency*1000))+"ms" if guildOptions.vc and guildOptions.vc.average_latency else "None")+"\n"
         retVal += "FFMPEG_OPTIONS: " +  str(guildOptions.FFMPEG_OPTIONS      )+"\n"
         # retVal += "\nYDL_OPTIONS: " +     str(guildOptions.YDL_OPTIONS)+"\n"
         retVal += "music_queue: " +     str("\n"+"\n".join(["\t" +line for line in self.createQueueText(ctx).split("\n")][:-1]))+"\n"
         # retVal += "current_song: " +    str(guildOptions.current_song[0]['title'] if guildOptions.current_song else None)
-
+        retVal += "```"
         await ctx.send(retVal)
+        
+    @commands.command(name="sendAttachment",aliases=["sa"])
+    async def sendAttachment(self,ctx):
+        file = discord.File("../Desktop/Screenshot from 2022-12-10 00-42-56.png", filename="image.png")
+        embed = discord.Embed()
+        embed.set_image(url="attachment://image.png")
+        await ctx.send(file=file, embed=embed)
