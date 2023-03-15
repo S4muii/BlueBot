@@ -7,8 +7,7 @@
 * most of all .. just HAVE FUN xD
 
 
-```
-
+```bash
 # Install venv ; Make a new virtual environment ; Use it
 python3 -m pip install venv
 python3 -m venv BlueBotVenv
