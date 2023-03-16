@@ -8,6 +8,7 @@ class help_cog(commands.Cog):
 General commands:
     .help       [h]                 - displays all the available commands
     .play       [p] {keyword|url}   - finds the song on youtube and plays it in your current channel.
+    .lyrics     [ly]                - finds the song lyrics using spotdl inner modules
     .queue      [q]                 - displays the current music queue
     .skip       [s]                 - skips the current song being played
     .clear      [c]                 - Stops the music and clears the queue

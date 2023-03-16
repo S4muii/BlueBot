@@ -1,13 +1,23 @@
 import discord
 from discord.ext import commands
-from spotdl import Spotdl
 
 import asyncio
 
 import re
 import os,sys
 
+#reddit meme downloader
+import praw
+import random
+
+reddit = praw.Reddit("bot")
+print(f"[Reddit] Logged in as {reddit.user.me()}!")
+
+
 from helper import guildOptions,SongsTempDir
+
+#from spotdl.providers.lyrics.azlyrics import AzLyrics
+from spotdl import Spotdl
 
 # Instaintiate spotdl . make sure the credentials are working
 try:
@@ -25,9 +35,15 @@ except Exception:
     sys.exit(1)
 
 
+"""patch to MusixMatch lyrics
+    spotdl.provider.lyrics.musixmatch.py
+    49:search_url = f"https://www.musixmatch.com/search/{query}/tracks"
+"""
+
+
 # TODO - Sanatize inputs ***Urgent
 # TODO - Minimize the time it takes to find the song [maybe caching]
-# TODO - Lyrics
+
 # TODO - make the client stream the music on disk style *****
 
 # TODO - use the song metadata , show it to the users preferably using embeds
@@ -81,15 +97,17 @@ class music_cog(commands.Cog):
 
     async def search_spotdl(self, ctx, item):
         
-        songs = spotdl.search([item])
-        
         try:
+            songs = spotdl.search([item])
             #get_download_urls takes multiple song names and returns multiple urls as well . hence JUST the first item 
             songUrl = spotdl.get_download_urls(songs)[0]
-            return songUrl
-        except IndexError:
+            songLyrics = spotdl.downloader.search_lyrics(songs[0])
+            
+            #print(songLyrics)
+            return songUrl,songLyrics
+        except Exception:
             await ctx.send("Spotdl shat the bed , trying yt-dlp directly. hold on boys")
-            return None
+            return None,None
         
 
     # searching the item on youtube
@@ -208,13 +226,14 @@ class music_cog(commands.Cog):
                 # TODO - this is just a workaround to get the bot to accept yt/ytMusic links
                 # test ".p https://www.youtube.com/watch?v=EORgrmt2cR0"
                 regex = '^((?:https?:)?\/\/)?((?:www|m|music)\.)?((?:youtube(-nocookie)?\.com|youtu.be))(\/(?:[\w\-]+\?v=|embed\/|v\/)?)([\w\-]+)(\S+)?$'
-                regexMatch = re.search(regex, query)
+                youtubeUrlRegexMatch = re.search(regex, query)
                 
-                if not regexMatch:
-                    songUrl = await self.search_spotdl(ctx, query)
+                if not youtubeUrlRegexMatch:
+                    songUrl,songLyrics = await self.search_spotdl(ctx, query)
 
-                song = await self.get_song_yt(ctx, regexMatch.string if regexMatch else (songUrl or query) ,"url" if regexMatch else "query")
-                            
+                song = await self.get_song_yt(ctx, youtubeUrlRegexMatch.string if youtubeUrlRegexMatch else (songUrl or query) ,"url" if youtubeUrlRegexMatch else "query")
+                song['lyrics'] = songLyrics
+                
                 if not song:
                     await ctx.send("Could not download the song. Incorrect format try another keyword. This could be due to playlist or a livestream format.")
                 else:
@@ -353,7 +372,6 @@ class music_cog(commands.Cog):
     @commands.command(name="guild_opts",aliases=["g","debug"])
     async def guild_options(self, ctx):
 
-        
         guildOptions = self.go[ctx.author.guild.id]
         
         retVal = "```"
@@ -372,9 +390,35 @@ class music_cog(commands.Cog):
         retVal += "```"
         await ctx.send(retVal)
         
-    @commands.command(name="sendAttachment",aliases=["sa"])
-    async def sendAttachment(self,ctx):
-        file = discord.File("../Desktop/Screenshot from 2022-12-10 00-42-56.png", filename="image.png")
+    @commands.command(name="randomMeme",aliases=["rm"])
+    async def randomMeme(self,ctx):
+
+        urls=[]
+
+        for submission in reddit.subreddit("memes").hot(limit=50):
+            ext=submission.url.split('.')
+            if submission.selftext.strip()=="" or ext.lower() not in ['png','gif','jpeg','jpg']:
+                urls.append(submission.url)
+        #print("we've gotten %d urls"%len(urls))
+        url = random.choice(urls)
+
+        await ctx.send(url)
+
+        '''
+        file = discord.File(diskFilename, filename="image.png")
         embed = discord.Embed()
         embed.set_image(url="attachment://image.png")
         await ctx.send(file=file, embed=embed)
+        '''
+        
+    @commands.command(name="lyrics",aliases=["ly"])
+    async def lyrics(self,ctx):
+        
+        guildOptions = self.go[ctx.author.guild.id]
+        
+        # print("lyrics",guildOptions.current_song[0]['lyrics'])
+        
+        if guildOptions.current_song[0]['lyrics']:
+            await ctx.send(guildOptions.current_song[0]['lyrics'][:1500])
+        else:
+            await ctx.send("We didn't find any lyrics for this song , dickhead")

@@ -7,9 +7,8 @@ import os,sys
 
 class MyBot(commands.Bot):
     
-    
     async def on_ready(self):
-        print(f'Logged on as {self.user}!')
+        print(f'[Discord] Logged in as {self.user}!')
         
 ''' 
        
